@@ -316,7 +316,7 @@ def count_hough_lines(
     vote_threshold: int = 50,
     nms_rho: int = 10,
     nms_theta: int = 10,
-) -> dict:
+) -> int:
     """
     Detect distinct physical lines by clustering nearby Hough accumulator peaks.
 
@@ -339,24 +339,14 @@ def count_hough_lines(
 
     Returns
     -------
-    dict with keys
-        'lines' : list of (rho, theta_deg, votes) tuples, one per detected
-                  physical line, sorted by descending vote count
-        'count' : int — number of detected lines, len(lines)
+    int — number of detected lines
     """
     result = hough_line_transform(edges, n_thetas=n_thetas, threshold=vote_threshold)
     acc, thetas, rhos = result["accumulator"], result["thetas"], result["rhos"]
 
     is_peak = _nms_2d(acc, nms_rho, nms_theta) & (acc > vote_threshold)
     r_idx, t_idx = np.where(is_peak)
-    votes = acc[r_idx, t_idx]
-    order = np.argsort(-votes)
-
-    lines = [
-        (float(rhos[r_idx[i]]), float(np.degrees(thetas[t_idx[i]])), int(votes[i]))
-        for i in order
-    ]
-    return {"lines": lines, "count": len(lines)}
+    return len(r_idx)
 
 
 # ---------------------------------------------------------------------------
