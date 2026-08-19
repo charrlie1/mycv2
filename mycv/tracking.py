@@ -663,10 +663,11 @@ def mahalanobis_gate(
     measurement: np.ndarray,
     H: np.ndarray,
     R: np.ndarray,
-) -> float:
+    threshold: float = 9.21,
+) -> bool:
     """
-    Squared Mahalanobis distance between a measurement and a Kalman
-    prediction, for measurement gating.
+    Mahalanobis distance gating test between a measurement and a Kalman
+    prediction.
 
         d^2 = innovation.T @ inv(S) @ innovation
         S   = H @ P_pred @ H.T + R
@@ -680,14 +681,18 @@ def mahalanobis_gate(
     Parameters
     ----------
     state_pred, P_pred, measurement, H, R : see `kalman_filter_update`
+    threshold : float — chi-squared threshold for gating. If the squared
+              Mahalanobis distance is <= threshold, returns True (gate passes);
+              otherwise returns False. Default is 9.21 (99% confidence for 2 DOF).
 
     Returns
     -------
-    float — squared Mahalanobis distance d^2
+    bool — True if d^2 <= threshold (measurement accepted), False otherwise
     """
     innovation = measurement - H @ state_pred
     S = H @ P_pred @ H.T + R
-    return float(innovation @ np.linalg.solve(S, innovation))
+    d2 = float(innovation @ np.linalg.solve(S, innovation))
+    return d2 <= threshold
 
 
 class KalmanCentroidTracker:
@@ -877,8 +882,8 @@ class KalmanCentroidTracker:
         R_eff = self.base_R / confidence if confidence is not None else self.base_R
 
         if self.gate_threshold is not None:
-            d2 = mahalanobis_gate(self.state, self.P, measurement, self.H, R_eff)
-            if d2 > self.gate_threshold:
+            d2 = mahalanobis_gate(self.state, self.P, measurement, self.H, R_eff, threshold=self.gate_threshold)
+            if not d2:  # gate failed (d2 > threshold)
                 # Reject: keep the (already-committed) predicted state.
                 self.last_gated = True
                 return (float(self.state[0]), float(self.state[1]))
@@ -1070,7 +1075,7 @@ class MultiObjectKalmanTracker:
                 del self.tracks[tid]
                 del self._missed[tid]
 
-        return {tid: (float(t.state[0]), float(t.state[1])) for tid, t in self.tracks.items()}
+        return list(self.tracks.items())
 
     def reset(self) -> None:
         """Remove all tracks and reset ID assignment."""
