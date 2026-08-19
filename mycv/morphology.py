@@ -180,16 +180,17 @@ def grayscale_dilate(image: np.ndarray, size: int = 3) -> np.ndarray:
 
     Parameters
     ----------
-    image : np.ndarray  shape (H, W), float
+    image : np.ndarray  shape (H, W), uint8 or float
     size  : int  odd window side length (default 3)
 
     Returns
     -------
-    np.ndarray  shape (H, W), float64 — windowed maximum map
+    np.ndarray  shape (H, W), same dtype as input — windowed maximum map
     """
     if size % 2 == 0:
         raise ValueError("size must be odd.")
 
+    original_dtype = image.dtype
     img = image.astype(np.float64)
     k = size // 2
     padded = np.pad(img, k, mode="constant", constant_values=-np.inf)
@@ -201,7 +202,12 @@ def grayscale_dilate(image: np.ndarray, size: int = 3) -> np.ndarray:
         shape=(H, W, size, size),
         strides=(s0, s1, s0, s1),
     )
-    return patches.max(axis=(-2, -1))
+    result = patches.max(axis=(-2, -1))
+    
+    # Convert back to original dtype if it was uint8
+    if original_dtype == np.uint8:
+        return np.clip(result, 0, 255).astype(np.uint8)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +377,7 @@ def component_properties(labels: np.ndarray, num_labels: int, image: np.ndarray 
         entry = {
             "label": lbl,
             "bbox": (y1, x1, y2, x2),
+            "area": pixel_area,  # alias for pixel_area for backward compatibility
             "pixel_area": pixel_area,
             "bbox_area": bbox_area,
             "extent": extent,

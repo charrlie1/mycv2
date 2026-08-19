@@ -31,7 +31,7 @@ def rgb_to_grayscale(image: np.ndarray) -> np.ndarray:
 
     weights = np.array([0.2989, 0.5870, 0.1140], dtype=np.float64)
     grayscale = np.dot(image.astype(np.float64), weights)
-    return np.clip(grayscale, 0, 255).astype(np.uint8)
+    return np.round(np.clip(grayscale, 0, 255)).astype(np.uint8)
 
 
 def threshold(image: np.ndarray, tau: int = 127) -> np.ndarray:

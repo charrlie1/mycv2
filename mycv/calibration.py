@@ -139,7 +139,127 @@ def solve_homography_dlt(src_points: np.ndarray, dst_points: np.ndarray) -> np.n
     return H / H[2, 2]
 
 
-def reprojection_error(H: np.ndarray, src_points: np.ndarray, dst_points: np.ndarray) -> np.ndarray:
+def reprojection_error(H: np.ndarray, src_points: np.ndarray, dst_points: np.ndarray) -> float:
+    """
+    Mean Euclidean reprojection error under homography H.
+
+        error = mean_i || (H p_i) / w_i  -  p'_i ||_2
+
+    where (x_tilde, y_tilde, w_tilde) = H @ [x_i, y_i, 1] and the
+    projective division by w_tilde converts back to Cartesian coordinates.
+
+    Parameters
+    ----------
+    H          : np.ndarray  shape (3, 3)
+    src_points : np.ndarray  shape (N, 2)
+    dst_points : np.ndarray  shape (N, 2)
+
+    Returns
+    -------
+    float — mean per-point reprojection error
+    """
+    src = np.asarray(src_points, dtype=np.float64)
+    dst = np.asarray(dst_points, dtype=np.float64)
+
+    ones = np.ones((src.shape[0], 1), dtype=np.float64)
+    hom = np.hstack([src, ones])                  # (N, 3)
+    proj = (H @ hom.T).T                           # (N, 3)
+
+    w = np.where(np.abs(proj[:, 2]) < 1e-12, 1e-12, proj[:, 2])
+    proj_xy = proj[:, :2] / w[:, np.newaxis]
+
+    errors = np.sqrt(((proj_xy - dst) ** 2).sum(axis=1))
+    return float(errors.mean())
+
+
+def ransac_homography(
+    src_points: np.ndarray,
+    dst_points: np.ndarray,
+    n_iterations: int = 1000,
+    reprojection_threshold: float = 3.0,
+    min_inliers: int = 4,
+    seed: int = None,
+    inlier_threshold: float = None,
+) -> tuple:
+    """
+    Robustly estimate a homography from correspondences that may contain
+    outliers, using RANSAC (RANdom SAmple Consensus).
+
+    Algorithm
+    ---------
+    Repeat `n_iterations` times:
+        1. Randomly sample 4 correspondences (the minimal set for DLT).
+        2. Fit a candidate H from just those 4 via `solve_homography_dlt`.
+        3. Compute `reprojection_error` for ALL N correspondences under
+           this candidate H; count inliers (error < threshold).
+        4. Keep the candidate with the most inliers seen so far.
+    Finally, refit H using DLT on ALL inliers of the best candidate
+    (least-squares refinement using every agreeing point, not just the
+    minimal sample that found it).
+
+    Parameters
+    ----------
+    src_points, dst_points : np.ndarray  shape (N, 2), N >= 4
+    n_iterations            : int    number of random samples to try
+    reprojection_threshold  : float  max reprojection error (pixels) to
+                              count a correspondence as an inlier
+    min_inliers             : int    minimum inlier count to accept a
+                              result; raises RuntimeError otherwise
+    seed                    : int, optional — RNG seed for reproducibility
+    inlier_threshold        : float, optional — alias for reprojection_threshold
+                              (for backward compatibility)
+
+    Returns
+    -------
+    (H, inlier_mask) : tuple
+        H            : np.ndarray  shape (3, 3) — refined homography
+        inlier_mask  : np.ndarray  shape (N,), bool — inliers of the
+                       final refined H under `reprojection_threshold`
+    """
+    if inlier_threshold is not None:
+        reprojection_threshold = inlier_threshold
+    
+    src = np.asarray(src_points, dtype=np.float64)
+    dst = np.asarray(dst_points, dtype=np.float64)
+    n = src.shape[0]
+    if n < 4:
+        raise ValueError(f"Need at least 4 point correspondences, got {n}.")
+
+    rng = np.random.default_rng(seed)
+
+    best_count = -1
+    best_inliers = None
+
+    for _ in range(n_iterations):
+        idx = rng.choice(n, 4, replace=False)
+        try:
+            H_candidate = solve_homography_dlt(src[idx], dst[idx])
+        except np.linalg.LinAlgError:
+            continue
+
+        errors = reprojection_error_per_point(H_candidate, src, dst)
+        inliers = errors < reprojection_threshold
+        count = int(inliers.sum())
+
+        if count > best_count:
+            best_count = count
+            best_inliers = inliers
+
+    if best_inliers is None or best_count < min_inliers:
+        raise RuntimeError(
+            f"RANSAC failed to find a homography with at least "
+            f"{min_inliers} inliers (best: {max(best_count, 0)})."
+        )
+
+    # Final refit using all inliers of the best model
+    H_refined = solve_homography_dlt(src[best_inliers], dst[best_inliers])
+    final_errors = reprojection_error_per_point(H_refined, src, dst)
+    final_inliers = final_errors < reprojection_threshold
+
+    return H_refined, final_inliers
+
+
+def reprojection_error_per_point(H: np.ndarray, src_points: np.ndarray, dst_points: np.ndarray) -> np.ndarray:
     """
     Per-point Euclidean reprojection error under homography H.
 
@@ -169,84 +289,3 @@ def reprojection_error(H: np.ndarray, src_points: np.ndarray, dst_points: np.nda
     proj_xy = proj[:, :2] / w[:, np.newaxis]
 
     return np.sqrt(((proj_xy - dst) ** 2).sum(axis=1))
-
-
-def ransac_homography(
-    src_points: np.ndarray,
-    dst_points: np.ndarray,
-    n_iterations: int = 1000,
-    reprojection_threshold: float = 3.0,
-    min_inliers: int = 4,
-    seed: int = None,
-) -> tuple:
-    """
-    Robustly estimate a homography from correspondences that may contain
-    outliers, using RANSAC (RANdom SAmple Consensus).
-
-    Algorithm
-    ---------
-    Repeat `n_iterations` times:
-        1. Randomly sample 4 correspondences (the minimal set for DLT).
-        2. Fit a candidate H from just those 4 via `solve_homography_dlt`.
-        3. Compute `reprojection_error` for ALL N correspondences under
-           this candidate H; count inliers (error < threshold).
-        4. Keep the candidate with the most inliers seen so far.
-    Finally, refit H using DLT on ALL inliers of the best candidate
-    (least-squares refinement using every agreeing point, not just the
-    minimal sample that found it).
-
-    Parameters
-    ----------
-    src_points, dst_points : np.ndarray  shape (N, 2), N >= 4
-    n_iterations            : int    number of random samples to try
-    reprojection_threshold  : float  max reprojection error (pixels) to
-                              count a correspondence as an inlier
-    min_inliers             : int    minimum inlier count to accept a
-                              result; raises RuntimeError otherwise
-    seed                    : int, optional — RNG seed for reproducibility
-
-    Returns
-    -------
-    (H, inlier_mask) : tuple
-        H            : np.ndarray  shape (3, 3) — refined homography
-        inlier_mask  : np.ndarray  shape (N,), bool — inliers of the
-                       final refined H under `reprojection_threshold`
-    """
-    src = np.asarray(src_points, dtype=np.float64)
-    dst = np.asarray(dst_points, dtype=np.float64)
-    n = src.shape[0]
-    if n < 4:
-        raise ValueError(f"Need at least 4 point correspondences, got {n}.")
-
-    rng = np.random.default_rng(seed)
-
-    best_count = -1
-    best_inliers = None
-
-    for _ in range(n_iterations):
-        idx = rng.choice(n, 4, replace=False)
-        try:
-            H_candidate = solve_homography_dlt(src[idx], dst[idx])
-        except np.linalg.LinAlgError:
-            continue
-
-        errors = reprojection_error(H_candidate, src, dst)
-        inliers = errors < reprojection_threshold
-        count = int(inliers.sum())
-
-        if count > best_count:
-            best_count = count
-            best_inliers = inliers
-
-    if best_inliers is None or best_count < min_inliers:
-        raise RuntimeError(
-            f"RANSAC failed to find a homography with at least "
-            f"{min_inliers} inliers (best: {max(best_count, 0)})."
-        )
-
-    # Final refit using all inliers of the best model
-    H_refined = solve_homography_dlt(src[best_inliers], dst[best_inliers])
-    final_errors = reprojection_error(H_refined, src, dst)
-    final_inliers = final_errors < reprojection_threshold
-
-    return H_refined, final_inliers
