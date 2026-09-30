@@ -1,0 +1,607 @@
+% !TEX program = xelatex
+% mycv v4.2.1 mathematical reference
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}
+\usepackage[a4paper,margin=25mm,headheight=15pt]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,tabularx,array}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\definecolor{ink}{HTML}{17243A}
+\definecolor{blue}{HTML}{2457A6}
+\definecolor{muted}{HTML}{536276}
+\definecolor{rule}{HTML}{D8E0EA}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue,
+  pdftitle={mycv 4.2.1: Mathematical Foundations},
+  pdfauthor={Abodunrin Charles Toluwanimi},pdfsubject={Mathematical reference for mycv}}
+\titleformat{\section}{\Large\bfseries\color{ink}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{blue}}{\thesubsection}{0.65em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{ink}}{\thesubsubsection}{0.65em}{}
+\titlespacing*{\section}{0pt}{2.2ex plus .5ex}{1ex}
+\titlespacing*{\subsection}{0pt}{1.7ex plus .4ex}{.6ex}
+\setlist{nosep,leftmargin=1.5em}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.2}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{muted}mycv 4.2.1 \;|\; Mathematical Foundations}
+\fancyhead[R]{\small\color{muted}A. C. Toluwanimi}
+\fancyfoot[C]{\small\color{muted}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{rule}\leaders\hrule height \headrulewidth\hfill}}
+
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\softmax}{softmax}
+\DeclareMathOperator{\argmax}{arg\,max}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\I}{\mathbf{I}}
+\newcommand{\mycv}{\texttt{mycv}}
+
+\begin{document}
+\begin{titlepage}
+  \centering
+  \vspace*{22mm}
+  {\Large\sffamily\bfseries\color{blue} mycv\par}
+  \vspace{6mm}
+  {\huge\bfseries\color{ink} Mathematical Foundations\par}
+  \vspace{4mm}
+  {\Large A Pure-NumPy Computer Vision Library\par}
+  \vspace{13mm}
+  {\large Abodunrin Charles Toluwanimi\par}
+  \vspace{2mm}
+  {\normalsize Department of Electrical and Electronic Engineering\\
+  Obafemi Awolowo University, Ile-Ife\par}
+  \vfill
+  \begin{minipage}{0.82\textwidth}
+  \centering\color{muted}
+  A mathematical and implementation reference for the algorithms exposed by
+  \mycv{} v4.2.1. This edition extends the earlier v2.0.0 and v3.0.0 notes to
+  cover the current library, including tracking, calibration, region geometry,
+  neural networks, and the bundled shape classifier.
+  \end{minipage}
+  \vfill
+  {\large Version 4.2.1\par}
+  \vspace{2mm}
+  {\normalsize September 2026\par}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+\section{Scope, notation, and implementation conventions}
+
+This monograph follows the current source tree and public API of \mycv{} v4.2.1.
+It is a companion to the code, not a claim that every algorithm is a production
+vision system. The library implements its core image algorithms with NumPy and
+does not require OpenCV, SciPy, or scikit-image. Optional display, image I/O,
+and video streaming use separate dependencies.
+
+An image domain is
+\[
+  \Omega=\{0,\ldots,H-1\}\times\{0,\ldots,W-1\}.
+\]
+We write a pixel coordinate as $(x,y)$, where $x$ is the column and $y$ is the
+row. Array indexing is therefore \texttt{image[y, x]}; rows increase downward. RGB
+images have shape $(H,W,3)$ and grayscale images have shape $(H,W)$. Most
+photometric and mask functions use 8-bit values, while geometric and statistical
+intermediates use floating point.
+
+For a binary mask $M$, foreground means $M(y,x)>0$. Bounding boxes use the
+exclusive convention $(y_1,x_1,y_2,x_2)$, so the corresponding crop is exactly
+\texttt{image[y1:y2, x1:x2]}. Coordinate order and endpoint convention matter when
+passing detections between modules.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+Module & Mathematical area and main operations \\
+\midrule
+\texttt{core}, \texttt{color} & Pointwise maps, luminance, histograms, RGB/HSV coordinates \\
+\texttt{filters}, \texttt{morphology} & Discrete operators, set morphology, connected components \\
+\texttt{geometry}, \texttt{calibration} & Interpolation, affine/projective maps, homography estimation \\
+\texttt{features}, \texttt{detection} & Local moments, shape descriptors, template scores, box overlap \\
+\texttt{tracking} & Segmentation, state estimation, data association \\
+\texttt{nn}, \texttt{shape\_cnn} & Reverse-mode differentiation and learned shape classification \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Point operations and colour representations}
+
+\subsection{RGB to grayscale}
+
+For a pixel with RGB components in $[0,255]$, \mycv{} applies the BT.601-style
+luminance map
+\[
+  Y=0.299R+0.587G+0.114B.
+\]
+The weights sum to one, keeping the real-valued result within the channel range.
+The implementation computes in floating point, clips to $[0,255]$, rounds to
+the nearest integer, and returns \texttt{uint8}. The output is a luma-like grayscale
+image; it is not a full colourimetric conversion for arbitrary transfer
+functions or camera profiles.
+
+\subsection{Binary threshold}
+
+For threshold $\tau$, the binary image is
+\[
+  T_\tau(I)(y,x)=255\,\1\{I(y,x)\geq\tau\}.
+\]
+The comparison is inclusive. This pointwise segmentation rule is inexpensive,
+but a single global threshold can fail under nonuniform illumination or when
+foreground and background intensity distributions overlap.
+
+\subsection{Histogram equalization}
+
+Let $h(k)$ count pixels at intensity $k$ and let $N=HW$. The empirical
+probability mass and cumulative distribution are
+\[
+  p(k)=\frac{h(k)}{N},\qquad F(k)=\sum_{j=0}^{k}p(j).
+\]
+The lookup table used by the implementation is
+\[
+  L(k)=\operatorname{round}(255F(k)),\qquad I_{\rm eq}(y,x)=L(I(y,x)).
+\]
+This monotone remapping can spread occupied intensity levels and improve
+contrast. A discrete image does not in general become exactly uniform, and
+equalization can also amplify noise in sparsely populated ranges.
+
+\subsection{RGB to HSV and colour masks}
+
+Normalize $(R,G,B)$ by 255 and set $V=\max(R,G,B)$,
+$m=\min(R,G,B)$, and $\Delta=V-m$. Then
+\[
+ S=\begin{cases}\Delta/V,&V>0,\\0,&V=0,\end{cases}
+\]
+and hue is chosen from the maximal channel:
+\[
+H=\begin{cases}
+60\bigl((G-B)/\Delta\bmod 6\bigr),&V=R,\\
+60\bigl((B-R)/\Delta+2\bigr),&V=G,\\
+60\bigl((R-G)/\Delta+4\bigr),&V=B,\\
+0,&\Delta=0.
+\end{cases}
+\]
+The returned channels are $H\in[0,360)$, $S,V\in[0,1]$. Hue is undefined
+for achromatic colours and is set to zero by convention. A standard colour mask
+is an inclusive range test over H, S, and V. \texttt{color\_mask\_hue\_wrap} handles a
+hue interval crossing the $0/360$ boundary. \texttt{color\_mask\_adaptive} uses
+saturation/value thresholds for near-achromatic samples, where hue is unstable.
+
+\section{Spatial filters and binary morphology}
+
+\subsection{Two-dimensional convolution}
+
+For image $I$ and kernel $K$, true discrete convolution is
+\[
+  (I*K)[y,x]=\sum_{i,j}I[y-i,x-j]K[i,j].
+\]
+Thus the kernel is reflected in both axes before it is applied. \texttt{convolve2d}
+uses zero padding for \texttt{same} output and no padding for \texttt{valid} output. A
+sliding-window view exposes overlapping image patches and \texttt{einsum} contracts
+each patch with the flipped kernel. The view avoids copying the input patches,
+although the computation still scales with the number of output positions times
+the kernel area.
+
+\subsection{Sobel gradients}
+
+The horizontal Sobel kernel and its transpose are
+\[
+K_x=\begin{bmatrix}-1&0&1\\-2&0&2\\-1&0&1\end{bmatrix},
+\qquad K_y=K_x^{\mathsf T}.
+\]
+With $G_x=I*K_x$ and $G_y=I*K_y$, gradient magnitude and direction are
+\[
+  M=\sqrt{G_x^2+G_y^2},\qquad \theta=\operatorname{atan2}(G_y,G_x).
+\]
+The API returns raw float64 gradient maps and direction, plus a magnitude map
+normalized by that image's maximum to the 8-bit range. Consequently, normalized
+magnitudes from different images are not directly comparable as absolute
+gradient strengths.
+
+\subsection{Binary morphology as set operations}
+
+Represent a mask by its foreground set $F\subseteq\Omega$, and a structuring
+element by $B\subseteq\Z^2$. Dilation and erosion are
+\[
+ F\oplus B=\{z:\exists b\in B,\ z-b\in F\},\qquad
+ F\ominus B=\{z:\forall b\in B,\ z+b\in F\}.
+\]
+Dilation is an existential (logical ANY) neighborhood reduction; erosion is a
+universal (logical ALL) reduction. Opening and closing compose them:
+\[
+  F\circ B=(F\ominus B)\oplus B,\qquad
+  F\bullet B=(F\oplus B)\ominus B.
+\]
+The code uses constant padding: dilation treats outside pixels as background,
+while erosion pads with foreground. That erosion boundary choice avoids
+automatically eroding objects merely because they touch the image edge. The
+structuring element's active cells alone participate in the reductions.
+
+\texttt{grayscale\_dilate} instead computes a sliding maximum and pads with $-\infty$;
+it is used to identify local maxima, for example in corner-response maps.
+
+\subsection{Connected components}
+
+Connected-component labelling partitions the foreground into maximal connected
+sets under either 4-neighbor or 8-neighbor adjacency. The implementation uses
+a raster scan with provisional labels and union-find equivalence resolution,
+then a second pass maps roots to consecutive component IDs. Unlike many
+pixelwise operations in the package, this algorithm has explicit sequential
+loops. For component $C_i$, useful measurements include
+\[
+ A_i=|C_i|,\quad
+ (\bar{x}_i,\bar{y}_i)=\left(\frac{1}{A_i}\sum_{(x,y)\in C_i}x,
+                            \frac{1}{A_i}\sum_{(x,y)\in C_i}y\right).
+\]
+Component properties also expose an exclusive bounding box and optional mean
+colour; \texttt{select\_component} can choose the largest component or one near a
+requested point.
+
+\section{Geometry and projective calibration}
+
+\subsection{Bilinear interpolation}
+
+For source coordinate $(x_s,y_s)$, put $x_0=\lfloor x_s\rfloor$,
+$x_1=x_0+1$, $\alpha=x_s-x_0$ and similarly $y_0,y_1,\beta$. Then
+\begin{align*}
+I(x_s,y_s)={}&(1-\alpha)(1-\beta)I[y_0,x_0]
++\alpha(1-\beta)I[y_0,x_1]\\
+&+(1-\alpha)\beta I[y_1,x_0]
++\alpha\beta I[y_1,x_1].
+\end{align*}
+The four weights are nonnegative and sum to one. Coordinates outside the image
+are clamped to the nearest edge pixel (replication padding).
+
+\subsection{Rotation and perspective warp}
+
+Using homogeneous column vectors $\tilde p=(x,y,1)^{\mathsf T}$, rotation about
+the image center $c=(c_x,c_y)$ is represented by
+\[
+ M=T(c)R(\theta)T(-c),\qquad
+ R(\theta)=\begin{bmatrix}\cos\theta&-\sin\theta&0\\
+ \sin\theta&\cos\theta&0\\0&0&1\end{bmatrix}.
+\]
+To avoid holes, the implementation maps each destination pixel backward through
+$M^{-1}$ and samples the source with bilinear interpolation. Rotation is
+counter-clockwise in Cartesian coordinates; image rows themselves increase
+downward, so visual orientation follows the coordinate convention used by the
+implementation.
+
+A homography $H$ maps source points to destination points up to scale:
+\[
+  \tilde p'\sim H\tilde p.
+\]
+For each destination pixel, \texttt{warp\_perspective} applies $H^{-1}$ and dehomogenizes
+$(u,v,w)^{\mathsf T}$ as $(u/w,v/w)$. It then bilinearly samples the source.
+The output canvas is specified by the caller; this function does not infer a
+canvas that encloses the warped image.
+
+\subsection{Normalized DLT and RANSAC}
+
+For correspondence $(x_i,y_i)\leftrightarrow(x'_i,y'_i)$, the projective
+constraint yields two homogeneous linear equations in $h=\operatorname{vec}(H)$:
+\[
+\begin{bmatrix}-x_i&-y_i&-1&0&0&0&x'_ix_i&x'_iy_i&x'_i\\
+0&0&0&-x_i&-y_i&-1&y'_ix_i&y'_iy_i&y'_i\end{bmatrix}h=0.
+\]
+Stacking $N\ge4$ correspondences gives $Ah=0$. Before building $A$, Hartley
+normalization translates each point set to zero centroid and scales it so its
+mean radial distance is $\sqrt{2}$. SVD supplies the right singular vector
+associated with the smallest singular value. The normalized estimate is
+denormalized as
+\[
+  H=T_{\rm dst}^{-1}H_nT_{\rm src}.
+\]
+The implementation sets $H_{33}=1$ after denormalization; this assumes that
+entry is numerically usable.
+
+For a candidate $H$, the reprojection error is
+\[
+ e_i=\left\|\pi(H\tilde p_i)-p'_i\right\|_2,
+\]
+where $\pi(u,v,w)=(u/w,v/w)$. RANSAC repeatedly fits from four sampled pairs,
+marks $e_i<\epsilon$ as inliers, retains the largest consensus set, and refits
+on all selected inliers. It is robust to outliers when a sufficient inlier
+consensus exists; it does not resolve degenerate or poorly distributed point
+configurations automatically.
+
+\section{Features and object measurements}
+
+\subsection{Harris corners}
+
+For image gradients $I_x,I_y$, form local Gaussian-weighted second moments
+\[
+ S_{xx}=G_\sigma*I_x^2,\quad S_{xy}=G_\sigma*(I_xI_y),\quad
+ S_{yy}=G_\sigma*I_y^2,
+ \qquad
+ M=\begin{bmatrix}S_{xx}&S_{xy}\\S_{xy}&S_{yy}\end{bmatrix}.
+\]
+The Harris response is
+\[
+  R=\det(M)-k\,\tr(M)^2.
+\]
+Large positive responses indicate variation in two directions and are corner
+candidates; edge-like regions have one dominant eigenvalue. \texttt{detect\_harris\_corners}
+adds thresholding, local-maximum filtering, and optional mask restriction.
+
+\subsection{Hough lines}
+
+A line is represented in normal form
+\[
+  \rho=x\cos\theta+y\sin\theta.
+\]
+For each edge pixel and sampled $\theta$, the implementation computes a $\rho$
+bin and accumulates a vote. Peaks in the accumulator are line hypotheses;
+\texttt{count\_hough\_lines} clusters nearby peaks to estimate a count. The result
+depends on angle/rho resolution, edge quality, and peak thresholds.
+
+\subsection{Region moments and shape descriptors}
+
+For foreground coordinates $(x_i,y_i)$, area and centroid are
+\[
+ A=\sum_i1,\quad \bar{x}=A^{-1}\sum_i x_i,\quad
+ \bar{y}=A^{-1}\sum_i y_i.
+\]
+The centered second moments $\mu_{20}=\sum_i(x_i-\bar{x})^2$,
+$\mu_{02}=\sum_i(y_i-\bar{y})^2$, and
+$\mu_{11}=\sum_i(x_i-\bar{x})(y_i-\bar{y})$ define the covariance-like matrix
+\[
+ C=A^{-1}\begin{bmatrix}\mu_{20}&\mu_{11}\\\mu_{11}&\mu_{02}\end{bmatrix}.
+\]
+Its principal orientation is
+\[
+ \phi=\tfrac12\operatorname{atan2}(2\mu_{11},\mu_{20}-\mu_{02}),
+\]
+and with eigenvalues $\lambda_1\ge\lambda_2\ge0$, eccentricity is
+$e=\sqrt{1-\lambda_2/\lambda_1}$ (defined as zero for degenerate spread).
+
+The exclusive bounding box has width $w=x_2-x_1$ and height $h=y_2-y_1$.
+The library distinguishes true foreground area from rectangle area:
+\[
+ \text{extent}=A/(wh),\quad \text{aspect ratio}=w/h.
+\]
+With traced perimeter $P$ and convex hull area $A_h$, it also reports
+\[
+ \text{circularity}=\min\!\left(1,\frac{4\pi A}{P^2}\right),\qquad
+ \text{solidity}=A/A_h.
+\]
+These are discrete estimators and can be sensitive to segmentation and small
+objects. The heuristic classifier calls a region a circle only when both
+circularity is at least 0.85 and extent is at most 0.88; otherwise it uses
+aspect ratio to separate square-like from rectangular shapes. Colour is chosen
+as the nearest of six fixed RGB reference colours.
+
+\section{Template detection and box suppression}
+
+\subsection{Normalized cross-correlation}
+
+At each valid image patch $P_{xy}$, let $\tilde P=P_{xy}-\bar P$ and
+$\tilde T=T-\bar T$. The normalized cross-correlation score is
+\[
+ \operatorname{NCC}(x,y)=
+ \frac{\frac{1}{n}\sum_j\tilde P_j\tilde T_j}
+ {\sigma_P\sigma_T},\qquad n=k_Hk_W.
+\]
+This is Pearson correlation over patch entries and lies in $[-1,1]$. It is
+invariant to additive offsets and positive contrast scaling in the ideal
+non-degenerate case. If the patch or template has near-zero variance, the
+implementation returns zero. The output map has shape
+$(H-k_H+1,W-k_W+1)$, corresponding to each patch's top-left location. A memory
+guard prevents materializing excessively large patch-statistic temporaries.
+
+\subsection{Pyramids and multi-scale matching}
+
+Before downsampling by two, a 5 by 5 binomial kernel is applied:
+\[
+ G=\frac{1}{256}\begin{bmatrix}1&4&6&4&1\end{bmatrix}^{\mathsf T}
+ \begin{bmatrix}1&4&6&4&1\end{bmatrix},\qquad
+ I_{\ell+1}=(I_\ell*G)[::2,::2].
+\]
+The low-pass step attenuates frequencies that would alias under decimation.
+Multi-scale template matching searches pyramid levels, mapping detections back
+to the original image coordinates. It trades fine localization and small-object
+coverage for less work at coarse levels.
+
+\subsection{Non-maximum suppression}
+
+For exclusive-coordinate boxes $A,B$, intersection area is
+\[
+ |A\cap B|=\max(0,y_2^I-y_1^I)\max(0,x_2^I-x_1^I),
+\]
+where $y_1^I=\max(y_1^A,y_1^B)$, $y_2^I=\min(y_2^A,y_2^B)$, and likewise for
+$x$. Intersection over union is
+\[
+ \operatorname{IoU}(A,B)=\frac{|A\cap B|}{|A|+|B|-|A\cap B|}.
+\]
+Greedy NMS repeatedly keeps the highest-scoring remaining box and removes
+boxes whose IoU exceeds the selected threshold. Lower thresholds suppress more
+overlapping candidates.
+
+\section{Segmentation and motion tracking}
+
+\subsection{Motion and colour masks}
+
+For consecutive grayscale frames, motion is detected using the absolute
+difference
+\[
+ D_t(y,x)=|I_t(y,x)-I_{t-1}(y,x)|,\qquad
+ M_t(y,x)=255\,\1\{D_t(y,x)\ge\tau\}.
+\]
+The implementation widens unsigned inputs before subtraction to avoid uint8
+wraparound. Colour tracking instead thresholds HSV values; morphology can
+clean small gaps or isolated foreground pixels before component extraction.
+
+For a binary mask $M$, the foreground centroid returned by
+\texttt{calculate\_centroid} is
+\[
+  (\bar{x},\bar{y})=\left(\frac{\sum xM}{\sum M},
+                         \frac{\sum yM}{\sum M}\right),
+\]
+with the mask interpreted as foreground membership. It returns \texttt{None} for an
+empty mask. Disconnected regions should normally be split into components
+before tracking so their combined centroid does not fall between objects.
+
+\subsection{Kalman centroid filter}
+
+The single-object state is $s_t=[x_t,y_t,v_{x,t},v_{y,t}]^{\mathsf T}$. With
+time step $\Delta t$, the constant-velocity model is
+\[
+ s_t=F_ts_{t-1}+w_t,\quad
+ F_t=\begin{bmatrix}1&0&\Delta t&0\\0&1&0&\Delta t\\
+ 0&0&1&0\\0&0&0&1\end{bmatrix},\quad
+ z_t=Hs_t+v_t,
+ \quad H=\begin{bmatrix}1&0&0&0\\0&1&0&0\end{bmatrix}.
+\]
+For covariance $P$, process noise $Q$, and measurement noise $R$, prediction is
+\[
+ \hat{s}^-_t=F_t\hat{s}_{t-1},\qquad P^-_t=F_tP_{t-1}F_t^{\mathsf T}+Q.
+\]
+With residual $r_t=z_t-H\hat{s}^-_t$ and innovation covariance
+$S_t=HP^-_tH^{\mathsf T}+R$, the gain and correction are
+\[
+ K_t=P^-_tH^{\mathsf T}S_t^{-1},\quad
+ \hat{s}_t=\hat{s}^-_t+K_tr_t.
+\]
+The implementation solves linear systems rather than explicitly inverting the
+innovation covariance and uses the Joseph covariance update
+\[
+ P_t=(I-K_tH)P^-_t(I-K_tH)^{\mathsf T}+K_tRK_t^{\mathsf T},
+\]
+which better preserves symmetry and positive semidefiniteness under finite
+precision. Optional Mahalanobis gating rejects measurements with
+$r_t^{\mathsf T}S_t^{-1}r_t$ above a configured threshold. Measurement
+confidence can adjust effective measurement noise. The multi-object tracker
+associates detections with tracks using spatial distance and manages IDs,
+missed frames, and track creation/deletion; it is a lightweight nearest
+association scheme rather than a globally optimal assignment solver.
+
+\section{Neural-network toolkit and bundled shape model}
+
+\subsection{Layers and reverse-mode differentiation}
+
+The \texttt{mycv.nn} module supplies convolution, pooling, dense, and ReLU layers,
+composed in a sequential model. For a dense layer
+\[
+ Z=XW+b,\quad \delta=\frac{\partial L}{\partial Z},
+\]
+the gradients are
+\[
+ \frac{\partial L}{\partial W}=X^{\mathsf T}\delta,\qquad
+ \frac{\partial L}{\partial b}=\sum_{\rm batch}\delta,\qquad
+ \frac{\partial L}{\partial X}=\delta W^{\mathsf T}.
+\]
+For ReLU, $f(a)=\max(0,a)$ and the backward multiplier is $\1\{a>0\}$.
+Convolution and pooling implement the corresponding local reverse operations.
+The softmax cross-entropy loss for logits $z$ and one-hot target $y$ is
+\[
+ L(z,y)=-\sum_c y_c\log\softmax(z)_c,
+ \qquad \frac{\partial L}{\partial z}=\softmax(z)-y.
+\]
+The SGD optimizer updates parameters as $\theta\leftarrow\theta-\eta\nabla_\theta L$.
+
+\subsection{Shape CNN}
+
+\texttt{predict\_shape} uses bundled weights to classify a cropped, non-empty binary
+mask as Circle, Square, or Rectangle. The model input is normalized and
+resampled to its fixed small input size before inference. Its output contains
+the winning label, its softmax confidence, and per-class probabilities. Blank
+masks raise \texttt{ValueError}. The model is a narrow shape classifier and augments
+the geometric heuristic; it is not a general object detector. Version 4.2.1
+retrained the weights with the full square rotation range and applied
+degradation augmentation before resizing. The repository metadata records the
+training configuration and the measured synthetic stress-test score; that
+score should not be interpreted as a guarantee on arbitrary real camera data.
+
+\section{Numerical practice, limits, and reproducibility}
+
+\begin{itemize}
+  \item Cast unsigned images before subtraction or multiplication when signed
+        differences or products are required; uint8 arithmetic can wrap.
+  \item Use float64 for moments, correlations, projective transforms, and
+        covariance updates where dynamic range and precision matter.
+  \item Guard divisions at achromatic HSV pixels, flat NCC patches, empty
+        masks, and projective points near infinity.
+  \item Stride-based patch views are memory-efficient views, but reductions and
+        elementwise products may allocate large temporaries. Template matching
+        therefore enforces a temporary-memory ceiling by default.
+  \item Connected-component labelling, contour tracing, RANSAC iterations,
+        and greedy suppression contain sequential algorithmic steps; the
+        library is not loop-free even though many array operations are vectorized.
+  \item Results depend on image encoding, thresholds, scale, mask quality,
+        noise, and camera geometry. The functions expose algorithmic building
+        blocks and do not automatically solve these calibration choices.
+\end{itemize}
+
+The neural-network layer backward passes are covered by finite-difference
+gradient checks in the project tests. Unit tests also exercise the numerical
+and shape conventions of the image, tracking, detection, and calibration APIs.
+For exact parameter meanings and return-value details, the Python docstrings
+remain authoritative for the installed version.
+
+\section{API map}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+Module & Public concepts \\
+\midrule
+\texttt{core} & \texttt{rgb\_to\_grayscale}, \texttt{threshold} \\
+\texttt{color} & \texttt{histogram\_equalize}, \texttt{rgb\_to\_hsv} \\
+\texttt{filters} & \texttt{convolve2d}, Sobel kernels and edge response \\
+\texttt{morphology} & Binary/grayscale morphology, connected components, selection \\
+\texttt{geometry} & Bilinear sampling, rotation, perspective warp \\
+\texttt{features} & Harris and Hough features, region metrics, shape heuristic \\
+\texttt{detection} & NCC matching, pyramids, multiscale matching, NMS \\
+\texttt{tracking} & Motion/colour masks, centroid and Kalman trackers \\
+\texttt{calibration} & Normalized DLT, reprojection error, RANSAC \\
+\texttt{nn}, \texttt{shape\_cnn} & NumPy layers, optimizer, loss, trained shape predictor \\
+\texttt{streaming} & Optional PyAV \texttt{StreamReader} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{References}
+
+\begin{enumerate}[label={[\arabic*]}]
+\item ITU-R, \emph{Recommendation BT.601-7: Studio Encoding Parameters of
+Digital Television}, 2011.
+\item C. Harris and M. Stephens, ``A combined corner and edge detector,''
+\emph{Proceedings of the Alvey Vision Conference}, pp. 147--151, 1988.
+\item R. Hartley and A. Zisserman, \emph{Multiple View Geometry in Computer
+Vision}, 2nd ed., Cambridge University Press, 2004.
+\item R. C. Gonzalez and R. E. Woods, \emph{Digital Image Processing}, 4th ed.,
+Pearson, 2018.
+\item G. Bradski, ``The OpenCV Library,'' \emph{Dr. Dobb's Journal of Software
+Tools}, 2000. (Background reference; \mycv{} does not depend on OpenCV.)
+\item J. P. Lewis, ``Fast normalized cross-correlation,'' \emph{Vision
+Interface}, pp. 120--123, 1995.
+\item C. E. Shannon, ``Communication in the presence of noise,''
+\emph{Proceedings of the IRE}, vol. 37, no. 1, pp. 10--21, 1949.
+\item I. Goodfellow, Y. Bengio, and A. Courville, \emph{Deep Learning}, MIT
+Press, 2016.
+\end{enumerate}
+
+\vfill
+\begin{center}\small\color{muted}
+Mathematical companion to \mycv{} v4.2.1 \\
+Source, tests, model metadata, and release history: \\
+\url{https://github.com/charrlie1/mycv2}
+\end{center}
+
+\end{document}
