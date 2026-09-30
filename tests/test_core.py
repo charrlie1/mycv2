@@ -1,6 +1,5 @@
 """tests/test_core.py"""
-import numpy as np, pytest, sys
-sys.path.insert(0,"/home/claude/mycv_github")
+import numpy as np, pytest
 from mycv.core import rgb_to_grayscale, threshold
 
 class TestGray:

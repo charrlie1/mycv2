@@ -1,6 +1,5 @@
 """tests/test_streaming.py"""
-import numpy as np, pytest, sys
-sys.path.insert(0,"/home/claude/mycv_github")
+import numpy as np, pytest
 
 def test_importable(): import mycv.streaming
 

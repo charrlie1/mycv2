@@ -16,7 +16,7 @@ def rgb_to_grayscale(image: np.ndarray) -> np.ndarray:
     """
     Convert an RGB image to grayscale using the ITU-R BT.601 luminosity formula.
 
-    Y = 0.2989·R + 0.5870·G + 0.1140·B
+    Y = 0.299·R + 0.587·G + 0.114·B
 
     Parameters
     ----------
@@ -29,9 +29,9 @@ def rgb_to_grayscale(image: np.ndarray) -> np.ndarray:
     if image.ndim != 3 or image.shape[2] != 3:
         raise ValueError(f"Expected an RGB image of shape (H, W, 3), got {image.shape}.")
 
-    weights = np.array([0.2989, 0.5870, 0.1140], dtype=np.float64)
+    weights = np.array([0.299, 0.587, 0.114], dtype=np.float64)
     grayscale = np.dot(image.astype(np.float64), weights)
-    return np.clip(grayscale, 0, 255).astype(np.uint8)
+    return np.rint(np.clip(grayscale, 0, 255)).astype(np.uint8)
 
 
 def threshold(image: np.ndarray, tau: int = 127) -> np.ndarray:

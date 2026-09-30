@@ -1,5 +1,11 @@
 """Shared pytest fixtures."""
-import numpy as np, pytest
+from pathlib import Path
+import sys
+
+import numpy as np
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 @pytest.fixture
 def rng(): return np.random.default_rng(42)
@@ -16,7 +22,6 @@ def binary_mask():
 
 @pytest.fixture
 def sobel_outputs(gray_image):
-    import sys; sys.path.insert(0,"/home/claude/mycv_github")
     from mycv.filters import sobel_edge_detection
     r=sobel_edge_detection(gray_image)
     return r["Gx"].astype(float), r["Gy"].astype(float)

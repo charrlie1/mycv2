@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mycv"
-version = "4.1.0"
+version = "4.2.1"
 description = "Pure-NumPy computer vision library built from mathematical first principles"
 readme = "README.md"
 license = {text = "MIT"}
@@ -27,12 +27,14 @@ dev     = ["pytest>=7.4.0","pytest-cov>=4.1.0","black>=23.0.0","ruff>=0.1.0"]
 notebook= ["jupyter>=1.0.0","matplotlib>=3.5.0","pillow>=9.0.0"]
 
 [project.urls]
-Homepage      = "https://github.com/charrlie1/mycv"
-Documentation = "https://github.com/charrlie1/mycv/blob/main/mycv_math_v4.pdf"
-Repository    = "https://github.com/charrlie1/mycv.git"
+Homepage      = "https://github.com/charrlie1/mycv2"
+Repository    = "https://github.com/charrlie1/mycv2.git"
 
 [tool.setuptools.packages.find]
 include = ["mycv*"]
+
+[tool.setuptools.package-data]
+mycv = ["models/*.npz", "models/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

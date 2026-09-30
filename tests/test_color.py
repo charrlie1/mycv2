@@ -1,6 +1,5 @@
 """tests/test_color.py"""
-import numpy as np, pytest, sys
-sys.path.insert(0,"/home/claude/mycv_github")
+import numpy as np, pytest
 from mycv.color import histogram_equalize, rgb_to_hsv
 
 class TestHEq:

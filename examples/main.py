@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-examples/main.py  —  static 23-step pipeline for mycv v4.1.0
+examples/main.py  —  static 23-step pipeline for mycv v4.2.1
 Usage:
     cp /path/to/photo.jpg examples/test_image.jpg
     python examples/main.py
@@ -67,7 +67,7 @@ def main():
 
     hough = mycv.hough_line_transform(binary, n_thetas=180)
     save(u8(hough["accumulator"].astype(float)),                     "output_14_hough_accum.jpg")
-    print(f"     {mycv.count_hough_lines(binary)} Hough lines")
+    print(f"     {mycv.count_hough_lines(binary)['count']} Hough lines")
 
     save(mycv.rotate_image(gray, 30.),                               "output_15_rotated.jpg")
     Hmat = np.array([[1.,.3,0.],[0.,1.,0.],[0.,.001,1.]])
@@ -105,7 +105,7 @@ def main():
     od   = rng2.uniform(0,min(H,W),(10,2))
     H_est,mask = mycv.ransac_homography(np.vstack([sp,os_]),np.vstack([dp,od]),
                                          n_iterations=500,inlier_threshold=3.)
-    err = mycv.reprojection_error(H_est, sp, dp)
+    err = float(np.mean(mycv.reprojection_error(H_est, sp, dp)))
     print(f"     RANSAC: {mask.sum()}/50 inliers, reprojection error={err:.4f}px")
     save(mycv.warp_perspective(gray, H_est, gray.shape),             "output_23_calibration.jpg")
 

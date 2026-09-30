@@ -86,7 +86,8 @@ def rgb_to_hsv(image: np.ndarray) -> np.ndarray:
     delta = V - Cmin
 
     # S: avoid division by zero on pure-black pixels (V == 0)
-    S = np.where(V == 0, 0.0, delta / V)
+    S = np.zeros_like(V)
+    np.divide(delta, V, out=S, where=V != 0)
 
     # H: piecewise across the three cube faces
     # Replace delta==0 with 1.0 to avoid NaN; result is masked out afterward

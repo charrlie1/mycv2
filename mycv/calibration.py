@@ -178,6 +178,7 @@ def ransac_homography(
     reprojection_threshold: float = 3.0,
     min_inliers: int = 4,
     seed: int = None,
+    inlier_threshold: float = None,
 ) -> tuple:
     """
     Robustly estimate a homography from correspondences that may contain
@@ -204,6 +205,8 @@ def ransac_homography(
     min_inliers             : int    minimum inlier count to accept a
                               result; raises RuntimeError otherwise
     seed                    : int, optional — RNG seed for reproducibility
+    inlier_threshold        : float, optional — backwards-compatible alias
+                              for `reprojection_threshold`
 
     Returns
     -------
@@ -212,6 +215,9 @@ def ransac_homography(
         inlier_mask  : np.ndarray  shape (N,), bool — inliers of the
                        final refined H under `reprojection_threshold`
     """
+    if inlier_threshold is not None:
+        reprojection_threshold = inlier_threshold
+
     src = np.asarray(src_points, dtype=np.float64)
     dst = np.asarray(dst_points, dtype=np.float64)
     n = src.shape[0]

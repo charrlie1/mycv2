@@ -1,6 +1,5 @@
 """tests/test_geometry.py"""
-import numpy as np, pytest, sys
-sys.path.insert(0,"/home/claude/mycv_github")
+import numpy as np, pytest
 from mycv.geometry import bilinear_interpolate,rotate_image,warp_perspective
 
 class TestBilinear:

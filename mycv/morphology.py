@@ -26,10 +26,12 @@ patch tensor (H_out, W_out, kH, kW) and apply logical ANY / ALL reductions.
 import numpy as np
 
 
-def _extract_patches(binary: np.ndarray, kH: int, kW: int) -> np.ndarray:
+def _extract_patches(
+    binary: np.ndarray, kH: int, kW: int, *, pad_value: bool = False
+) -> np.ndarray:
     """
     Zero-copy extraction of all overlapping (kH, kW) patches from a 2-D
-    zero-padded binary array.
+    binary array padded with `pad_value`.
 
     Returns
     -------
@@ -38,7 +40,7 @@ def _extract_patches(binary: np.ndarray, kH: int, kW: int) -> np.ndarray:
     """
     pH, pW = kH // 2, kW // 2
     padded = np.pad(binary, ((pH, pH), (pW, pW)),
-                    mode="constant", constant_values=0)
+                    mode="constant", constant_values=pad_value)
     H, W   = binary.shape
     s0, s1 = padded.strides
     return np.lib.stride_tricks.as_strided(
@@ -72,7 +74,7 @@ def dilate(image: np.ndarray, kernel: np.ndarray = None) -> np.ndarray:
 
     binary  = (image > 0)
     kH, kW  = kernel.shape
-    patches = _extract_patches(binary, kH, kW)           # (H, W, kH, kW)
+    patches = _extract_patches(binary, kH, kW)
 
     se_mask = kernel.astype(np.bool_)
     masked  = patches & se_mask[np.newaxis, np.newaxis, :, :]
@@ -107,7 +109,7 @@ def erode(image: np.ndarray, kernel: np.ndarray = None) -> np.ndarray:
 
     binary  = (image > 0)
     kH, kW  = kernel.shape
-    patches = _extract_patches(binary, kH, kW)           # (H, W, kH, kW)
+    patches = _extract_patches(binary, kH, kW, pad_value=True)  # outside image is foreground
 
     se_mask = kernel.astype(np.bool_)
     active  = se_mask[np.newaxis, np.newaxis, :, :]
@@ -180,12 +182,12 @@ def grayscale_dilate(image: np.ndarray, size: int = 3) -> np.ndarray:
 
     Parameters
     ----------
-    image : np.ndarray  shape (H, W), float
+    image : np.ndarray  shape (H, W), uint8 or float
     size  : int  odd window side length (default 3)
 
     Returns
     -------
-    np.ndarray  shape (H, W), float64 — windowed maximum map
+    np.ndarray  shape (H, W) — windowed maximum map
     """
     if size % 2 == 0:
         raise ValueError("size must be odd.")
@@ -201,7 +203,10 @@ def grayscale_dilate(image: np.ndarray, size: int = 3) -> np.ndarray:
         shape=(H, W, size, size),
         strides=(s0, s1, s0, s1),
     )
-    return patches.max(axis=(-2, -1))
+    result = patches.max(axis=(-2, -1))
+    if image.dtype == np.uint8:
+        return np.clip(result, 0, 255).astype(np.uint8)
+    return result
 
 
 # ---------------------------------------------------------------------------

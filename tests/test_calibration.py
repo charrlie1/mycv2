@@ -1,6 +1,5 @@
 """tests/test_calibration.py"""
-import numpy as np, pytest, sys
-sys.path.insert(0,"/home/claude/mycv_github")
+import numpy as np, pytest
 from mycv.calibration import normalize_points,solve_homography_dlt,reprojection_error,ransac_homography
 
 def _pairs(n=20,noise=0.,seed=0):
@@ -38,10 +37,14 @@ class TestDLT:
 class TestReproj:
     def test_identity_zero(self):
         pts=np.random.default_rng(8).uniform(0,100,(10,2))
-        assert reprojection_error(np.eye(3),pts,pts)==pytest.approx(0.,abs=1e-8)
+        errors = reprojection_error(np.eye(3),pts,pts)
+        assert errors.shape == (10,)
+        np.testing.assert_allclose(errors, 0., atol=1e-8)
     def test_good_lt_bad(self):
         src,dst,_=_pairs(20)
-        assert reprojection_error(solve_homography_dlt(src,dst),src,dst) < reprojection_error(np.eye(3),src,dst)
+        good = reprojection_error(solve_homography_dlt(src,dst),src,dst)
+        bad = reprojection_error(np.eye(3),src,dst)
+        assert good.mean() < bad.mean()
 
 class TestRANSAC:
     def test_shapes(self):

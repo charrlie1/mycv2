@@ -1,6 +1,5 @@
 """tests/test_morphology.py"""
-import numpy as np, pytest, sys
-sys.path.insert(0,"/home/claude/mycv_github")
+import numpy as np, pytest
 from mycv.morphology import dilate,erode,opening,closing,grayscale_dilate,label_connected_components,component_properties
 
 SE3=np.ones((3,3),dtype=np.bool_)
@@ -51,7 +50,7 @@ class TestConnectedComponents:
     def test_properties_area(self):
         m=np.zeros((20,20),dtype=np.uint8); m[5:10,5:10]=255
         labels,n=label_connected_components(m)
-        props=component_properties(labels,n); assert props[0]["area"]==25
+        props=component_properties(labels,n); assert props[0]["pixel_area"]==25
     def test_properties_centroid(self):
         m=np.zeros((20,20),dtype=np.uint8); m[8:12,8:12]=255
         labels,n=label_connected_components(m)

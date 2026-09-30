@@ -1,6 +1,5 @@
 """tests/test_detection.py"""
-import numpy as np, pytest, sys
-sys.path.insert(0,"/home/claude/mycv_github")
+import numpy as np, pytest
 from mycv.detection import match_template_ncc,find_template_matches,gaussian_pyramid,non_max_suppression
 
 class TestNCC:

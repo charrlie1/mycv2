@@ -2,7 +2,7 @@
 """
 live_demo.py
 
-Updated real-time demonstration driver for mycv v4.1.
+Updated real-time demonstration driver for mycv v4.2.1.
 
 Integrates:
 
@@ -21,28 +21,17 @@ Integrates:
 
 No OpenCV is used for image mathematics.
 
-CHANGELOG (this patch, v2)
+CHANGELOG (this patch, v3)
 -----------------------------
-`sample_color_from_center` ('s' key) and template mode's colour-derived
-segmentation both used HUE-window masking (`color_mask_hue_wrap`) built
-from a single sampled colour. Hue is only numerically meaningful for
-colours with real chroma: for a near-white/gray/black object, R, G, and
-B are nearly equal, so the hue formula divides by a near-zero delta and
-ordinary camera sensor noise gets amplified into essentially RANDOM hue
-values (measured: >100 degree standard deviation across a purely white
-patch). A hue-window mask sampled from such an object therefore only
-recovers a small, arbitrary, noise-correlated fragment of it -- which is
-exactly why a round white bottle cap segmented as a tiny corner rather
-than the whole cap, and was misclassified as "Square" instead of
-"Circle" (its shape metrics were computed from that tiny fragment, not
-the true silhouette).
-
-Fixed by switching both call sites to `mycv.tracking.color_mask_adaptive`,
-which detects low-saturation (achromatic) sampled colours and thresholds
-on Saturation + Value only (ignoring the meaningless hue) instead --
-correctly segmenting white/gray/black objects as a single solid region.
-Saturated colours are unaffected (falls through to the same hue-window
-behaviour as before).
+Added optional CNN-based shape classification (mycv.shape_cnn) as a
+second opinion ALONGSIDE classify_object's heuristic label -- never
+replacing it. When a real segmented object mask is available (colour/
+motion mode's selected component, or template mode's colour-derived
+blob), the trained Circle/Square/Rectangle CNN runs on that same crop
+and its prediction is shown as a separate 'cnn_shape:' HUD line. Toggle
+live with 'v', or start disabled with --no-shape-cnn. Any failure here
+(missing weights, bad crop) is silently swallowed -- the heuristic label
+is always shown regardless of whether the CNN succeeded.
 """
 
 from __future__ import annotations
@@ -55,7 +44,7 @@ from pathlib import Path
 import numpy as np
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
@@ -75,6 +64,7 @@ try:
         draw_bounding_box,
         classify_object,
     )
+    from mycv.shape_cnn import predict_shape
     from mycv.tracking import (
         compute_motion_mask,
         color_mask_hue_wrap,
@@ -126,7 +116,7 @@ except Exception as exc:
 
 
 HELP_TEXT = """
-mycv live demo v4.1
+mycv live demo v4.2.1
 ===================
 
 Modes:
@@ -149,6 +139,7 @@ Tracking controls:
     o       toggle mask overlay
     p       toggle morphological cleanup
     f       toggle corner/line feature counting
+    v       toggle CNN shape prediction (augments the heuristic label)
 
 Detection controls:
     n       toggle multi-scale template matching
@@ -454,6 +445,7 @@ class VisionPipeline:
         use_multiscale=False,
         multiscale_levels=3,
         feature_counts=False,
+        use_shape_cnn=True,
         process_noise=1e-2,
         measurement_noise=1e-1,
         gate_threshold=0.0,
@@ -476,6 +468,10 @@ class VisionPipeline:
         self.use_multiscale = bool(use_multiscale)
         self.multiscale_levels = int(multiscale_levels)
         self.feature_counts = bool(feature_counts)
+        # AUGMENTS classify_object's heuristic label with a second opinion
+        # from the trained mycv.shape_cnn (see _update_object_info) -- does
+        # not replace or influence the heuristic itself.
+        self.use_shape_cnn = bool(use_shape_cnn)
 
         self.min_area = int(min_area)
         self.max_match_distance = float(max_match_distance)
@@ -541,6 +537,8 @@ class VisionPipeline:
         self.object_metrics = None
         self.object_label = ""
         self.object_bbox = None
+        self.cnn_shape_label = None
+        self.cnn_shape_confidence = None
 
         self.lost_frames = 0
         self._last_mode = None
@@ -568,6 +566,8 @@ class VisionPipeline:
         self.object_metrics = None
         self.object_label = ""
         self.object_bbox = None
+        self.cnn_shape_label = None
+        self.cnn_shape_confidence = None
 
         self.lost_frames = 0
 
@@ -756,6 +756,35 @@ class VisionPipeline:
 
         return props, selected_mask
 
+    def _run_shape_cnn(self, mask, bbox):
+        """
+        Run the trained mycv.shape_cnn on the object's own segmented mask
+        (cropped to its bbox), storing the result in self.cnn_shape_label /
+        self.cnn_shape_confidence. This AUGMENTS self.object_label (the
+        heuristic classify_object result) -- it never overwrites it, and
+        any failure here (missing weights, empty crop, etc.) never crashes
+        the pipeline -- self.object_label is always still shown even if
+        the CNN prediction is unavailable this frame.
+
+        Failures ARE recorded (in self.last_error, the same field the
+        template-detection path already uses for its own errors) rather
+        than silently discarded -- an earlier version used a bare
+        `except Exception: pass` here, which is fine for a shipped demo
+        but actively hides the difference between "the CNN says X" and
+        "the CNN never ran because of an empty crop" during development.
+        """
+        if not self.use_shape_cnn or mask is None or bbox is None:
+            return
+
+        try:
+            y1, x1, y2, x2 = bbox
+            crop = mask[y1:y2, x1:x2]
+            result = predict_shape(crop)
+            self.cnn_shape_label = result["label"]
+            self.cnn_shape_confidence = result["confidence"]
+        except Exception as exc:
+            self.last_error = f"shape CNN: {exc}"
+
     def _update_object_info(self, rgb, gray):
         """
         Extract bounding-box metrics and classify the current selected object.
@@ -764,6 +793,8 @@ class VisionPipeline:
         self.object_metrics = None
         self.object_label = ""
         self.object_bbox = None
+        self.cnn_shape_label = None
+        self.cnn_shape_confidence = None
 
         if not self.show_object_info:
             return
@@ -804,6 +835,8 @@ class VisionPipeline:
                     )
                 except Exception:
                     self.object_label = "Unknown"
+
+                self._run_shape_cnn(self.selected_mask, self.object_bbox)
 
             return
 
@@ -888,6 +921,8 @@ class VisionPipeline:
                 )
             except Exception:
                 self.object_label = "Template"
+
+            self._run_shape_cnn(selected_mask_for_label, self.object_bbox)
 
     def process(self, rgb, timestamp=None):
         """
@@ -1235,6 +1270,7 @@ def run_headless(args):
         use_multiscale=args.multiscale,
         multiscale_levels=args.multiscale_levels,
         feature_counts=args.feature_counts,
+        use_shape_cnn=not args.no_shape_cnn,
         process_noise=args.process_noise,
         measurement_noise=args.measurement_noise,
         gate_threshold=args.gate,
@@ -1318,6 +1354,7 @@ def run_gui(args):
         use_multiscale=args.multiscale,
         multiscale_levels=args.multiscale_levels,
         feature_counts=args.feature_counts,
+        use_shape_cnn=not args.no_shape_cnn,
         process_noise=args.process_noise,
         measurement_noise=args.measurement_noise,
         gate_threshold=args.gate,
@@ -1422,6 +1459,9 @@ def run_gui(args):
 
                     elif event.key == pygame.K_f:
                         pipeline.feature_counts = not pipeline.feature_counts
+
+                    elif event.key == pygame.K_v:
+                        pipeline.use_shape_cnn = not pipeline.use_shape_cnn
 
                     elif event.key == pygame.K_n:
                         pipeline.use_multiscale = not pipeline.use_multiscale
@@ -1601,6 +1641,14 @@ def run_gui(args):
                     )
                 )
 
+            if pipeline.cnn_shape_label:
+                hud_lines.append(
+                    (
+                        f"cnn_shape: {pipeline.cnn_shape_label} ({pipeline.cnn_shape_confidence:.2f})",
+                        (255, 180, 255),
+                    )
+                )
+
             if pipeline.mode == "color":
                 hud_lines.append(
                     (
@@ -1654,7 +1702,7 @@ def run_gui(args):
 
             hud_lines.append(
                 (
-                    "k:kalman u:multi i:object o:overlay p:morph f:features n:multiscale h:help",
+                    "k:kalman u:multi i:object o:overlay p:morph f:features v:cnn n:multiscale h:help",
                     (190, 190, 190),
                 )
             )
@@ -1819,6 +1867,16 @@ def main():
         "--feature-counts",
         action="store_true",
         help="Enable Harris corner count and Hough line count in object metrics.",
+    )
+
+    parser.add_argument(
+        "--no-shape-cnn",
+        action="store_true",
+        help=(
+            "Disable the trained shape CNN (mycv.shape_cnn), which augments "
+            "the heuristic object label with a second opinion (shown as a "
+            "'cnn_shape:' HUD line). Enabled by default; toggle live with 'v'."
+        ),
     )
 
     parser.add_argument(

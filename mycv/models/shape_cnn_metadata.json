@@ -1,0 +1,20 @@
+{
+  "architecture_version": "v1",
+  "architecture": "Conv2D(1->8,3x3,same)-ReLU-MaxPool2-Conv2D(8->16,3x3,same)-ReLU-MaxPool2-Flatten-Dense(576->32)-ReLU-Dense(32->3)",
+  "input_size": 24,
+  "class_names": [
+    "Circle",
+    "Square",
+    "Rectangle"
+  ],
+  "dataset_version": "v3 (native-resolution degradation ordering, full 0-90/\u00b190deg rotation coverage)",
+  "training_seed": 42,
+  "training_samples_per_class": 2500,
+  "validation_samples_per_class": 400,
+  "clean_synthetic_val_accuracy": 0.9917,
+  "combined_stress_test_accuracy": 0.96,
+  "known_weak_point": "salt-and-pepper noise (uniform random per-pixel flips) at 3% flip rate: 85% accuracy overall, 65% for Circle specifically -- see tools/benchmark_shape_cnn.py Section B/D for the full per-degradation breakdown.",
+  "generator_script": "gen_shape_dataset.py",
+  "benchmark_script": "tools/benchmark_shape_cnn.py",
+  "normalization": "binary {0.0, 1.0}, no further normalization"
+}

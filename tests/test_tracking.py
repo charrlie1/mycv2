@@ -1,6 +1,5 @@
 """tests/test_tracking.py"""
-import numpy as np, pytest, sys
-sys.path.insert(0,"/home/claude/mycv_github")
+import numpy as np, pytest
 from mycv.tracking import (compute_motion_mask,color_mask,color_mask_hue_wrap,
     calculate_centroid,TemporalSmoother,
     kalman_filter_predict,kalman_filter_update,mahalanobis_gate,
@@ -67,14 +66,15 @@ class TestKalman:
         assert su.shape==(4,) and Pu.shape==(4,4)
     def test_gate_close(self):
         F,H,Q,R,P=self._cv(); sp,Pp=kalman_filter_predict(np.zeros(4),P,F,Q)
-        assert mahalanobis_gate(sp,Pp,np.array([0.1,0.1]),H,R,threshold=10) is True
+        assert mahalanobis_gate(sp,Pp,np.array([0.1,0.1]),H,R) <= 10
     def test_gate_far(self):
         F,H,Q,R,P=self._cv(); sp,Pp=kalman_filter_predict(np.zeros(4),P,F,Q)
-        assert mahalanobis_gate(sp,Pp,np.array([1000.,1000.]),H,R,threshold=1) is False
+        assert mahalanobis_gate(sp,Pp,np.array([1000.,1000.]),H,R) > 1
     def test_tracker_first_update(self): assert KalmanCentroidTracker().update((5.,10.))==(5.,10.)
     def test_tracker_reset(self):
         t=KalmanCentroidTracker(); t.update((5.,5.)); t.reset()
         assert t.update((99.,99.))==(99.,99.)
     def test_multi_assigns_ids(self):
         t=MultiObjectKalmanTracker(); r=t.update([(10.,20.),(50.,60.)])
-        assert len(r)==2 and len({x[0] for x in r})==2
+        assert len(r)==2 and len(set(r))==2
+        assert set(r.values()) == {(10.,20.), (50.,60.)}

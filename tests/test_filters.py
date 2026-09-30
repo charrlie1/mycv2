@@ -1,6 +1,5 @@
 """tests/test_filters.py"""
-import numpy as np, pytest, sys
-sys.path.insert(0,"/home/claude/mycv_github")
+import numpy as np, pytest
 from mycv.filters import convolve2d, sobel_edge_detection, SOBEL_X, SOBEL_Y
 
 class TestConv:

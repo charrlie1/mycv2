@@ -1,6 +1,5 @@
 """tests/test_features.py"""
-import numpy as np, pytest, sys
-sys.path.insert(0,"/home/claude/mycv_github")
+import numpy as np, pytest
 from mycv.features import (harris_corner_response,detect_harris_corners,
     hough_line_transform,count_hough_lines,convex_hull,
     extract_object_metrics,draw_bounding_box,classify_object)
@@ -11,7 +10,9 @@ class TestHarris:
     def test_uniform_zero(self):
         np.testing.assert_allclose(harris_corner_response(np.zeros((20,20)),np.zeros((20,20))),0,atol=1e-10)
     def test_corner_positive(self):
-        Gx=np.zeros((30,30)); Gy=np.zeros((30,30)); Gx[15,15]=Gy[15,15]=100
+        Gx=np.zeros((30,30)); Gy=np.zeros((30,30))
+        Gx[14:17,10:17]=100
+        Gy[10:17,14:17]=100
         assert harris_corner_response(Gx,Gy)[15,15]>0
     def test_edge_negative(self):
         Gx=np.zeros((30,30)); Gy=np.zeros((30,30)); Gx[15,15]=100
@@ -30,8 +31,10 @@ class TestHough:
     def test_line_detected(self):
         e=np.zeros((30,60),dtype=np.uint8); e[15,:]=255
         assert hough_line_transform(e)["accumulator"].max()>0
-    def test_count_returns_int(self):
-        assert isinstance(count_hough_lines(np.zeros((20,20),dtype=np.uint8)),int)
+    def test_count_returns_details(self):
+        result = count_hough_lines(np.zeros((20,20),dtype=np.uint8))
+        assert result["count"] == 0
+        assert result["lines"] == []
 
 class TestConvexHull:
     def test_returns_ndarray(self):
@@ -54,3 +57,8 @@ class TestObjectUtils:
     def test_draw_no_crash(self):
         img=np.zeros((30,30,3),dtype=np.uint8)
         draw_bounding_box(img,(2,2,28,28)); assert True
+    def test_metrics_line_count_uses_hough_result(self):
+        mask = np.zeros((20, 20), dtype=np.uint8)
+        mask[5:15, 5:15] = 255
+        metrics = extract_object_metrics(mask, edges=np.zeros_like(mask))
+        assert metrics["line_count"] == 0
