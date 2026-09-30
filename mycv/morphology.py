@@ -23,6 +23,8 @@ All binary operations use np.lib.stride_tricks.as_strided to build a zero-copy
 patch tensor (H_out, W_out, kH, kW) and apply logical ANY / ALL reductions.
 """
 
+from __future__ import annotations
+
 import numpy as np
 
 

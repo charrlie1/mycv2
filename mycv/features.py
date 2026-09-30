@@ -25,6 +25,8 @@ and `mycv.morphology.component_properties`:
     crop   = image[y1:y2, x1:x2]      (no +1 anywhere)
 """
 
+from __future__ import annotations
+
 import numpy as np
 from .filters import convolve2d
 from .morphology import grayscale_dilate
