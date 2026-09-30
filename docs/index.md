@@ -17,3 +17,7 @@ Algorithm explanations and parameter details live in the docstrings of the modul
 | `nn` / `shape_cnn` | NumPy neural network layers and pretrained shape classifier |
 
 See the [README](../README.md) for installation, demos, and test commands.
+
+For mathematical derivations and implementation conventions across the current
+release, see the [mycv 4.2.1 mathematical foundations](mycv_math_v4.2.1.pdf)
+or its [XeLaTeX source](mycv_math_v4.2.1.tex).
