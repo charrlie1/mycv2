@@ -1,58 +1,136 @@
-# mycv — Pure NumPy Computer Vision Library
+# mycv
 
-`mycv` is a computer vision and image processing library implemented with NumPy. It includes image filters, morphology, geometric transforms, feature extraction, detection, tracking, camera calibration, and an optional live demo. It does not depend on OpenCV, SciPy, or scikit-image.
+**A from-scratch computer vision and image processing library built with NumPy.**
 
-## Install
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![NumPy](https://img.shields.io/badge/array%20backend-NumPy-013243)](https://numpy.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+`mycv` brings common vision algorithms together in one small Python package: filters, morphology, shape features, template detection, object tracking, homography estimation, and a small neural-network toolkit. The algorithms are implemented with NumPy rather than relying on OpenCV, SciPy, or scikit-image. Optional demo tools use Pillow, pygame-ce, and PyAV.
+
+> **Version:** 4.2.1 · **Python:** 3.9+ · **Core dependency:** NumPy 1.22+
+
+## Get started
+
+Install the library from the repository:
 
 ```bash
 git clone https://github.com/charrlie1/mycv2.git
 cd mycv2
-python -m pip install .             # library core
-python -m pip install ".[demo]"    # live and static demo dependencies
-python -m pip install ".[dev]"     # tests and lint tools
+python -m pip install .
 ```
 
-The core library requires NumPy. The static demo also needs Pillow; the live GUI needs pygame-ce, and network streams need PyAV.
+Or install the current checkout in editable mode while developing:
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
+Optional dependency groups:
+
+| Install | Includes | Use it for |
+|---|---|---|
+| `python -m pip install ".[demo]"` | pygame-ce, PyAV, Pillow | Live camera/video demo, network streams, and image demo |
+| `python -m pip install ".[dev]"` | pytest, pytest-cov, Black, Ruff | Tests and development tools |
+| `python -m pip install ".[notebook]"` | Jupyter, Matplotlib, Pillow | Notebook exploration and plots |
+
+The core package only needs NumPy. PyAV is needed for network streams and some video sources; a camera and a graphical display are only needed for interactive camera use.
 
 ## Quick start
 
+Images are NumPy arrays. For the core image functions, use RGB images shaped `(height, width, 3)` and grayscale images shaped `(height, width)`, typically with `uint8` values from 0 to 255.
+
 ```python
+import numpy as np
 import mycv
+
+# A small synthetic RGB image, with a bright square in the middle.
+rgb = np.zeros((64, 64, 3), dtype=np.uint8)
+rgb[20:44, 20:44] = (255, 255, 255)
 
 gray = mycv.rgb_to_grayscale(rgb)
 edges = mycv.sobel_edge_detection(gray)
-mask = mycv.compute_motion_mask(frame_t, frame_prev, threshold=30)
-centroid = mycv.calculate_centroid(mask)
+mask = mycv.threshold(gray, tau=127)
+
+print(gray.shape, edges.shape, np.unique(mask))
+```
+
+Compare two grayscale frames to find motion, then measure its centroid:
+
+```python
+before = np.zeros((64, 64), dtype=np.uint8)
+after = before.copy()
+after[20:32, 25:37] = 255
+
+motion = mycv.compute_motion_mask(after, before, threshold=30)
+centroid = mycv.calculate_centroid(motion)
+print(centroid)  # (x, y), or None when the mask has no foreground pixels
 
 tracker = mycv.KalmanCentroidTracker()
-position = tracker.update(centroid)
+position = tracker.update(centroid) if centroid is not None else tracker.predict()
 ```
 
-`mycv.MultiObjectKalmanTracker.update()` returns a mapping of track IDs to `(x, y)` positions. `mycv.reprojection_error()` returns one error per correspondence; take its mean if you need a single summary value.
+`mycv.MultiObjectKalmanTracker.update(detections)` accepts a list of `(x, y)` detections and returns a mapping from persistent track IDs to positions.
 
-## Demos
+## What’s included
+
+| Area | Examples |
+|---|---|
+| Image operations | RGB-to-grayscale conversion, thresholding, histogram equalization, convolution, Sobel edges |
+| Morphology | Dilation, erosion, opening, closing, connected components, component selection and properties |
+| Geometry | Image rotation, bilinear interpolation, perspective warping, homography estimation with DLT and RANSAC |
+| Features | Harris corners, Hough lines, convex hulls, bounding boxes, object measurements and heuristic classification |
+| Detection | Normalized cross-correlation template matching, multi-scale matching, Gaussian pyramids, non-maximum suppression |
+| Tracking | Motion and HSV color masks, temporal smoothing, single- and multi-object Kalman tracking |
+| Neural networks | NumPy `Conv2D`, pooling, `Dense`, `ReLU`, `Sequential`, SGD and softmax cross-entropy |
+| Shape CNN | Bundled pretrained Circle/Square/Rectangle classifier to complement heuristic shape labels |
+| Streaming | Optional PyAV `StreamReader` for video and network streams |
+
+The `mycv.shape_cnn.predict_shape(mask)` classifier expects a non-empty, cropped binary mask for a single object. It predicts Circle, Square, or Rectangle; it is intended to augment the library’s geometric shape heuristic, not replace general-purpose object recognition.
+
+For exported names and detailed algorithm notes, see the module docstrings in [`mycv/`](mycv/) and the [module index](docs/index.md).
+
+## Run the demos
+
+Install the demo tools first:
 
 ```bash
-# Static pipeline (place a photo at examples/test_image.jpg)
+python -m pip install ".[demo]"
+```
+
+The static example reads `examples/test_image.jpg`; add an image at that path before running it:
+
+```bash
 python examples/main.py
-
-# Live demo: synthetic input needs no camera
-python examples/live_demo.py --source synthetic
-python examples/live_demo.py --source synthetic --headless
-python examples/live_demo.py --source camera --mode motion
-python examples/live_demo.py --source video.mp4
 ```
 
-The live demo supports colour and motion tracking, template matching, Kalman tracking, object metrics, and optional CNN shape classification. The pretrained shape model ships in `mycv/models/` and is included in package builds.
-
-## Tests
+The live demo defaults to a synthetic source, so it can be started without a camera:
 
 ```bash
+python examples/live_demo.py
+python examples/live_demo.py --source synthetic --headless
+```
+
+Other sources include a camera, a camera index, a video file, or a stream URL:
+
+```bash
+python examples/live_demo.py --source camera --mode motion
+python examples/live_demo.py --source 0
+python examples/live_demo.py --source path/to/video.mp4
+python examples/live_demo.py --source "rtsp://host:554/stream"
+```
+
+Use `python examples/live_demo.py --help` to see startup options. In the interactive window, press **h** for the full controls. Useful keys include **c** for color mode, **m** for motion mode, **t** to capture a template, **k** to toggle Kalman filtering, **u** for multi-object tracking, **i** for object information, **v** for the shape CNN, and **q** or **Esc** to quit.
+
+## Run the test suite
+
+```bash
+python -m pip install ".[dev]"
 python -m pytest
 ```
 
-The core tests need NumPy and pytest only. They do not require a camera or display.
+The unit tests run without a physical camera or display. The optional streaming tests need PyAV.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
